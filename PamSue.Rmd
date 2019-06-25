@@ -1,0 +1,163 @@
+---
+title: "PamSure"
+author: "Frederick Pickering, CFA"
+date: "6/18/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = FALSE)
+#----------------#
+# Load Libraries #
+#----------------#
+
+### General Libraries ###
+library(tidyverse)
+library(caret)
+
+### Import Specific Functions ###
+import::from(.from = broom, glance)
+import::from(.from =magrittr, "%$%")
+import::from(.from = readxl, read_xls)
+import::from(.from = corrplot, corrplot.mixed)
+
+#----------------#
+# Source Helpers #
+#----------------#
+
+### Load Data ###
+source("DataSchema.R", local = FALSE)
+
+#-------------#
+# Set Globals #
+#-------------#
+
+set.seed(717)
+
+#-------------#
+# Import Data #
+#-------------#
+
+### Import Descriptions ###
+varDesc <- read_xls("pamsue.xls", sheet = "Variable Descriptions")
+
+comTypeDesc <- read_xls("pamsue.xls", sheet = "comType")
+
+tmp <- tempfile(fileext = '.csv')
+
+read_xls("pamsue.xls") %>% 
+  write_csv(tmp)
+
+### Read Raw Data ###
+rawData <- 
+  read_csv(
+    file = tmp,
+    col_types = colSchema) %>% 
+  as_tibble() %>% 
+  set_names(colNames) %>% 
+  select(sales, everything(), -`storeId`)
+
+### Create and Expand Bootstrap ###
+combData <-
+  rawData %>% 
+  createResample(times = 5) %>% 
+  map_df(
+    function(bs){
+      rawData %>% slice(bs)
+    }
+  ) %>% 
+  bind_rows(rawData)
+
+#-------------------------------------#
+# Split Data into Train and Test Sets #
+#-------------------------------------#
+
+split <- createDataPartition(y = rawData[['sales']], p = 0.6, list = FALSE)
+
+trainData <- combData %>% slice(split)
+testData <- combData %>% slice(-split)
+
+#-----------------#
+# Make Dummy Vars #
+#-----------------#
+
+test <- dummyVars(" ~ .", data = rawData)
+trsf <- data.frame(predict(test, newdata = rawData))
+print(trsf)
+write_csv(trsf, "export.csv")
+```
+
+## Queston 1
+
+As a possible alternative to the subjective "competitive type" classification, how well can you forecast sales using the demographic variables (along with the store size and the percentage of hard goods)? What does your model reveal about the nature of location sites that are likely to have higher sales?
+
+```{r Q1}
+
+q2Results <- 
+  lm(sales ~ . - comType - inc100Plus - sch12Plus - sellingSqrft, 
+     data = rawData)
+
+summary(q2Results)
+
+```
+
+## Question 2
+
+How good is the "competitive type" classification method (along with using the store size and percentage of hard goods) at predicting sales.
+
+```{r Q2}
+
+q2Results <- lm(sales ~ comType + sellingSqrft + percentHardGoods, data = rawData)
+
+summary(q2Results)
+
+```
+
+```{r Q4}
+
+q3ResultsA <- lm(sales ~ ., data = rawData)
+q3ResultsB <- lm(sales ~ . - sellingSqrft - percentHardGoods, data = rawData)
+
+summary(q3ResultsA)
+summary(q3ResultsB)
+
+```
+
+```{r cars, echo=FALSE, message=TRUE, warning=TRUE, paged.print=TRUE}
+dropCols <- 
+  findCorrelation(
+    cor(rawData %>% select(-comType)),  
+    cutoff = 0.7, 
+    verbose = FALSE, 
+    names = TRUE,
+    exact = FALSE)
+
+..corData <- combData %>% select(-dropCols, -comType)
+
+M <- cor(..corData)
+
+corrplot.mixed(M)
+```
+
+## Box Plot
+
+```{r Q_test}
+
+boxplot(raw)
+
+```
+
+## Q3
+
+```{r randomForest, echo=FALSE}
+trees <- train(sales ~ .,
+               rawData,
+              method = "cforest")
+
+varImp(trees[[11]]) %$% 
+  tibble(Names = rownames(.), Overall = .[["Overall"]]) %>%
+  # filter(substr(Names, 1, 7) != "comType") %>% 
+  arrange(Overall %>% desc()) %>% 
+  slice(1:10) %>% 
+  pull(Names) -> vars
+```
