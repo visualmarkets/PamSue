@@ -1,12 +1,14 @@
 ---
-title: "PamSure"
+title: "Pam Sue"
 author: "Frederick Pickering, CFA"
 date: "6/18/2019"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(include = FALSE)
+
+options(kableExtra.auto_format = FALSE)
+
 #----------------#
 # Load Libraries #
 #----------------#
@@ -14,12 +16,17 @@ knitr::opts_chunk$set(include = FALSE)
 ### General Libraries ###
 library(tidyverse)
 library(caret)
+library(glue)
+
+library(flextable)
 
 ### Import Specific Functions ###
-import::from(.from = broom, glance)
-import::from(.from =magrittr, "%$%")
+import::from(.from = broom, glance, tidy)
+import::from(.from = magrittr, "%$%")
 import::from(.from = readxl, read_xls)
 import::from(.from = corrplot, corrplot.mixed)
+import::from(.from = knitr, kable)
+import::from(.from = kableExtra, kable_styling)
 
 #----------------#
 # Source Helpers #
@@ -82,48 +89,35 @@ testData <- combData %>% slice(-split)
 #-----------------#
 
 test <- dummyVars(" ~ .", data = rawData)
-trsf <- data.frame(predict(test, newdata = rawData))
-print(trsf)
-write_csv(trsf, "export.csv")
-```
 
-## Queston 1
-
-As a possible alternative to the subjective "competitive type" classification, how well can you forecast sales using the demographic variables (along with the store size and the percentage of hard goods)? What does your model reveal about the nature of location sites that are likely to have higher sales?
-
-```{r Q1}
-
-q2Results <- 
-  lm(sales ~ . - comType - inc100Plus - sch12Plus - sellingSqrft, 
-     data = rawData)
-
-summary(q2Results)
+regData <- data.frame(predict(test, newdata = rawData)) %>% 
+  rename(comType1 = comType.1,
+         comType2 = comType.2,
+         comType3 = comType.3,
+         comType4 = comType.4,
+         comType5 = comType.5,
+         comType6 = comType.6,
+         comType7 = comType.7) %>% 
+  select(-comType7)
 
 ```
 
-## Question 2
+## Introduction
 
-How good is the "competitive type" classification method (along with using the store size and percentage of hard goods) at predicting sales.
+PamSue is a client department store operating in the south-eastern United States. The store primarily serves lower income residents. Recently PamSue's forecasts have been missing the market when it comes to selecting the placement for new stores. They are looking to add more analytics to the process of selecting the location for new stores. In addition to regression analysis they are looking at a new metric created by the real estate team where they analyze the competitive locations. 
 
-```{r Q2}
+This analysis was conducted in R and the document was build using RMarkdwon. To see the web version of this report please go to XYZ.com. 
 
-q2Results <- lm(sales ~ comType + sellingSqrft + percentHardGoods, data = rawData)
+## Data Prep
 
-summary(q2Results)
+### Correlation Analysis
 
-```
+Before we can start running regressions we need to fimaliraze ourselves with the underlying data. Here we will look at scatter plots of the various regressors (features) and howt hey compare against the dependent variable (sales). We'll also look at correlation matricies to check for possible multicolinearity in the variables. 
 
-```{r Q4}
+The correlation plot of the various regressors to sales shows us that there is a strong correlation between the sales of a store and the percentage of spanish speaking people in a neighborhood. The correlation also shows us that in neighborhoods where the percentage of residents earn between 10 and 14 thousand dollars has a strong relationship with sales in the sore. We also see strong negative correlations in the data set. Home ownership has a strong negative correlation with sales and the more in home utilizes. For example homes with dishwashers and dryers are more likely to see a strong negative relationship with sales.  
 
-q3ResultsA <- lm(sales ~ ., data = rawData)
-q3ResultsB <- lm(sales ~ . - sellingSqrft - percentHardGoods, data = rawData)
+```{r Correlation, echo=FALSE, message=TRUE, warning=TRUE, paged.print=TRUE}
 
-summary(q3ResultsA)
-summary(q3ResultsB)
-
-```
-
-```{r cars, echo=FALSE, message=TRUE, warning=TRUE, paged.print=TRUE}
 dropCols <- 
   findCorrelation(
     cor(rawData %>% select(-comType)),  
@@ -134,30 +128,250 @@ dropCols <-
 
 ..corData <- combData %>% select(-dropCols, -comType)
 
-M <- cor(..corData)
+M <- (cor(..corData) * 100) %>% round(0)
 
-corrplot.mixed(M)
+corrplot.mixed(M, number.cex = .6, outline =TRUE, addrect = 2, tl.pos = 'lt', upper = "shade", lower = "number", is.corr=FALSE)
+
 ```
 
-## Box Plot
+### Feature Engineering 
 
-```{r Q_test}
+```{r}
 
-boxplot(raw)
+  # featurePlot(x = rawData %>% select_at(), 
+  #           y = rawData$comType, 
+  #           plot = "ellipse",
+  #           ## Add a key at the top
+  #           auto.key = list(columns = 3))
 
+```
+
+```{r FeaturePlots, echo=FALSE, warning=FALSE, paged.print=FALSE}
+
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col = rgb(.2, .2, .2, .4)
+theme1$plot.symbol$pch = 16
+theme1$plot.line$col = rgb(1, 0, 0, .7)
+theme1$plot.line$lwd <- 2
+
+trellis.par.set(theme1)
+
+featurePlot(x = rawData %>% select(-sales, -comType), 
+            y = rawData[["sales"]], 
+            plot = "scatter",
+            type = c("p", "smooth"),
+            span = .5,
+            ## Add a key at the top
+            auto.key = list(columns = 3))
+
+```
+
+```{r BoxPlotComType, echo=FALSE}
+
+featurePlot(x = rawData %>% select(-comType), # %>% select_at(vars(sales, contains("sch"))), 
+            y = rawData$comType, 
+            plot = "box", 
+            ## Pass in options to bwplot() 
+            scales = list(y = list(relation="free"),
+                          x = list(rot = 90)),  
+            layout = c(7,5), 
+            # auto.key = list(columns = 2)
+            )
+
+```
+
+```{r CompTypeCurves, echo=FALSE}
+
+featurePlot(x = rawData %>% select_at(vars(sales, contains("inc"))), 
+            y = rawData$comType,
+            plot = "density", 
+            ## Pass in options to xyplot() to 
+            ## make it prettier
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")), 
+            adjust = 1.5, 
+            pch = "|", 
+            # layout = c(5, 2), 
+            auto.key = list(columns = 4))
+
+```
+
+## Queston 1
+
+*As a possible alternative to the subjective "competitive type" classification, how well can you forecast sales using the demographic variables (along with the store size and the percentage of hard goods)? What does your model reveal about the nature of location sites that are likely to have higher sales?*
+
+Before we can begin to assess the accuracy of a model with all of these variables we nee to find the significant variables in the dataset. Not all variables are going to be useful in predicting the sales of a store. In this model I start by making a linear regression model in R with all of the variables minus *Competitive Type*. The data has already been loaded into the R enviroment and the resulting line for a linear regression model is `lm(sales ~ . -comType, data = regData)` and assign the model to q1Reg. This provides a linear regression model with all of the varialbes minus compType. The next step is to assess the varialbes importance. Caret provides  useful funciton for pulling variables importance from a model the function `varImp(q1Reg)` provides a ranking of the most important varialbes. This funciton looks ranks the varialbes by their contribution to lower the standard error of the model. I've taken the top 15 largest contributors to the model and passed them into a second linear regression model and I've come with with a linear regression model in the exhibits below. 
+
+This model is able to explain approximately 68% of the variation in the dataset and has an adjusted R^2 of 66%. This top down moethod of modeling sales provides a slightly higher R^2 and adjusted R^2 values than the defaul stepwise methodology provided by the RESESSIONS.XLSX file.
+
+This regression model tells us several important things aabout the locations of PamSue stores. From the model I created population is the most important variable. This stands to reason as more populus locations are more likely to drive a higher level of foortraffic into the store and therefore more sales. The second and third most important vaiables are median home and selling square feet. These variables suggest that wealtheir neighborhoods and larger stores are going to see a higher level of sales. Interestingly, demographic variables such as a home having an air conditioner, freezer, dryers, or a car are more likely to see lower level of sales. This suggests that PamSue does cater to a lower wealth demographic compared to the overall population.
+
+```{r Q1, echo=FALSE, results='asis', warning=FALSE}
+
+q1All <- train(sales ~ . -comType,
+               rawData,
+               method = "lm")
+
+impVars <- 
+  varImp(q1All) %$%
+  importance %>%
+  rownames_to_column() %>% 
+  arrange(Overall %>% desc()) %>% 
+  slice(1:15) %>% 
+  pull(rowname)
+
+q1Results <- 
+  train(
+    glue("sales ~ {paste0(impVars, collapse = \" + \")}") %>% as.formula(),
+    data = rawData,
+    method = "lm"
+  )
+
+ coefs <- 
+  q1Results %$%
+  finalModel %>% 
+  broom::tidy() %>% 
+  set_names(c("Term", "Beta", "Standard Error", "T-Stat", "P-Value"))
+ 
+q1Results %$% 
+  finalModel %>% 
+  broom::glance() %>% 
+  t() %>% data.frame() %>% 
+  rownames_to_column() %>% 
+  set_names(c("Metric", "Value")) %>% 
+  flextable() %>% theme_vanilla() %>% autofit()
+
+```
+
+```{r q1Chunk2, echo=FALSE, results='asis', warning=FALSE}
+  coefs %>% flextable() %>% theme_vanilla() %>% autofit()
+```
+
+## Question 2
+
+*How good is the "competitive type" classification method (along with using the store size and percentage of hard goods) at predicting sales.*
+
+Competitive type is a rather good predictor at estimating sales. Just using competitive type, percent hard goods, and selling square feet provdes a model with an adjusted R^2 of 70%. This means the dummy variables, and selling square feet are better at predicting sales than the demographic data provided in the dataset. This means that the real estate deparment has come up with a very useful methodology for categorizing store locations. Interestingly percent hard goods does not produce a statistically significant result when included in the model. This either means it's explanitory analysis is dwarfed by the relationship between sales and the other variables or sales is not strongly related to percent hard goods. 
+
+This is a strong model with all of the regressors having t-stats that are significnatlly above 2. The p-values also suggest that there is a s very small chance we are accepting a false Beta as true. Note these values show the estimated increase in sales over competitive type seven. Competitive type seven includes ***"stores located along the sides of major roads"*** meaning any other cometetitive type location will see higher sales than stores simply placed alongside major roads. 
+
+```{r Q2, echo=FALSE, warning=FALSE, results='asis', out.width='25%'}
+
+q2All <- train(sales ~ .,
+               regData %>% select(sales, comType1, comType2, comType3, comType4, comType5, comType6, percentHardGoods, sellingSqrft),
+               method = "lm")
+
+impVars <- 
+  varImp(q2All) %$%
+  importance %>%
+  rownames_to_column() %>% 
+  arrange(Overall %>% desc()) %>%
+  # slice(1:15) %>% 
+  pull(rowname)
+
+q2Results <- 
+  train(
+    glue("sales ~ {paste0(impVars, collapse = \" + \")} - percentHardGoods") %>% as.formula(),
+    data = regData,
+    method = "lm"
+  )
+
+ coefs <- 
+  q2Results %$%
+  finalModel %>% 
+  broom::tidy() %>% 
+  set_names(c("Term", "Beta", "Standard Error", "T-Stat", "P-Value"))
+
+myft <- coefs %>% flextable() %>% theme_vanilla() %>% autofit()
+ 
+q2Results %$% 
+  finalModel %>% 
+  broom::glance() %>% 
+  t() %>% data.frame() %>% 
+  rownames_to_column() %>% 
+  set_names(c("Metric", "Value")) %>% 
+  flextable() %>% theme_vanilla() %>% autofit()
+
+```
+
+```{r, results='asis', echo=FALSE, warnings=FALSE, out.width='25%'}
+myft
 ```
 
 ## Q3
 
-```{r randomForest, echo=FALSE}
-trees <- train(sales ~ .,
-               rawData,
-              method = "cforest")
+*Two sites, A and B, are currently under consideration for the next new store opening. Characteristics of the two sites are provided below in Table B. Which site would you reccommend? What sales forecasting approach would you recommend.*
+
+```{r Q3}
+
+q3All <-
+  train(
+    sales ~ .,
+    regData,
+    method = "lm",
+  )
+
+impVars <- 
+  varImp(q3All) %$%
+  importance %>%
+  rownames_to_column() %>% 
+  arrange(Overall %>% desc()) %>%
+  slice(1:15) %>% 
+  pull(rowname)
+
+q3Results <- 
+  train(
+    glue("sales ~ {paste0(impVars, collapse = \" + \")}") %>% as.formula(),
+    data = regData,
+    method = "lm"
+  )
+
+ coefs <- 
+  q3Results %$%
+  finalModel %>% 
+  broom::tidy() %>% 
+  set_names(c("Term", "Beta", "Standard Error", "T-Stat", "P-Value"))
+
+myft <- coefs %>% flextable() %>% theme_vanilla() %>% autofit()
+ 
+q3Results %$% 
+  finalModel %>% 
+  broom::glance() %>% 
+  t() %>% data.frame() %>% 
+  rownames_to_column() %>% 
+  set_names(c("Metric", "Value")) %>% 
+  flextable() %>% theme_vanilla() %>% autofit()
+
+
+```
+
+```{r randomForest, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+regData <- trsf 
+
+predictors <- names(regData)[-1]
+
+grid <- expand.grid(data.frame(predictors,predictors)) %>% 
+  filter(predictors != predictors.1)
+
+comb <- glue("{grid$predictors}:{grid$predictors.1}")
+
+comb <- paste0(comb, collapse = " + ")
+
+..cut <- findCorrelation(cor(regData), names = TRUE, cutoff=.9)
+
+trees <- train(as.formula(paste0("sales ~ .")),
+               regData,
+               method = "rf",
+               importance = TRUE)
 
 varImp(trees[[11]]) %$% 
   tibble(Names = rownames(.), Overall = .[["Overall"]]) %>%
   # filter(substr(Names, 1, 7) != "comType") %>% 
   arrange(Overall %>% desc()) %>% 
-  slice(1:10) %>% 
+  slice(1:15) %>% 
   pull(Names) -> vars
+
+lm(glue("sales ~ {paste0(vars, collapse='+')}"), data = regData) %>% summary()
+
 ```

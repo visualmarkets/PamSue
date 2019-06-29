@@ -33,7 +33,7 @@ colSchema <-
     `selling_sqrft (in 1000s)` = col_double(),
     `sales (in $1000s)`        = col_double(),
     `percent_hard_goods`       = col_double(),
-    `comtype`                  = col_factor()
+    `comtype`                  = col_factor(levels = c(1,2,3,4,5,6,7), ordered = FALSE)
   )
 
 colNames <-
