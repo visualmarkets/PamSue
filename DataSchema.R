@@ -1,5 +1,4 @@
 colSchema <-
-  colSchema <-
   cols_only(
     `store #`                  = col_double(),
     `%black`                   = col_double(),

@@ -2,6 +2,7 @@
 title: "Pam Sue"
 author: "Frederick Pickering, CFA"
 date: "6/18/2019"
+# output: html_document
 output: word_document
 ---
 
@@ -88,9 +89,10 @@ testData <- combData %>% slice(-split)
 # Make Dummy Vars #
 #-----------------#
 
-test <- dummyVars(" ~ .", data = rawData)
+dummVar <- dummyVars(" ~ .", data = rawData)
 
-regData <- data.frame(predict(test, newdata = rawData)) %>% 
+regData <- 
+  data.frame(predict(dummVar, newdata = rawData)) %>% 
   rename(comType1 = comType.1,
          comType2 = comType.2,
          comType3 = comType.3,
@@ -99,6 +101,29 @@ regData <- data.frame(predict(test, newdata = rawData)) %>%
          comType6 = comType.6,
          comType7 = comType.7) %>% 
   select(-comType7)
+
+#-------------------------#
+# Ingest New Observations #
+#-------------------------#
+
+newData <- 
+  read_csv(
+    file = "NewSites.csv",
+    col_types = cols(
+      .default = col_double(),
+      `newStore` = col_character(),
+      `comtype` = col_factor(levels = c(1,2,3,4,5,6,7), ordered = FALSE)
+    )) %>% 
+  as_tibble() %>% 
+  set_names(colNames) %>% 
+  select(sales, newStore = storeId, everything())
+
+newDummyVars <- dummyVars(" ~ .", data = newData)
+
+newRegData <-
+  data.frame(predict(newDummyVars, newdata = newData)) %>% 
+  rename(comType1 = comType.1,
+         comType5 = comType.5)
 
 ```
 
@@ -315,33 +340,20 @@ impVars <-
   varImp(q3All) %$%
   importance %>%
   rownames_to_column() %>% 
+  # filter(substr(rowname, 1, 7) != "comType") %>% 
   arrange(Overall %>% desc()) %>%
   slice(1:15) %>% 
   pull(rowname)
 
 q3Results <- 
   train(
-    glue("sales ~ {paste0(impVars, collapse = \" + \")}") %>% as.formula(),
+    glue("sales ~ {paste0(impVars, collapse = \" + \")} + comType") %>% as.formula(),
     data = regData,
     method = "lm"
   )
 
- coefs <- 
-  q3Results %$%
-  finalModel %>% 
-  broom::tidy() %>% 
-  set_names(c("Term", "Beta", "Standard Error", "T-Stat", "P-Value"))
 
-myft <- coefs %>% flextable() %>% theme_vanilla() %>% autofit()
- 
-q3Results %$% 
-  finalModel %>% 
-  broom::glance() %>% 
-  t() %>% data.frame() %>% 
-  rownames_to_column() %>% 
-  set_names(c("Metric", "Value")) %>% 
-  flextable() %>% theme_vanilla() %>% autofit()
-
+predict(q3Results, newdata = newRegData) %>% View()
 
 ```
 
